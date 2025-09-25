@@ -8,7 +8,7 @@
       <p class="subtitle">{{ profile.profession }}</p>
       <ul class="meta-list">
         {% if profile.years_experience %}
-          <li><strong>Experience:</strong> {{ profile.years_experience }} years</li>
+          <li><strong>Experience:</strong> {{ profile.years_experience }}</li>
         {% endif %}
         <li><strong>Source:</strong> {{ profile.source_file }}</li>
       </ul>
@@ -25,17 +25,6 @@
         <ul class="pill-list">
           {% for skill in profile.skills %}
             <li>{{ skill }}</li>
-          {% endfor %}
-        </ul>
-      </section>
-    {% endif %}
-
-    {% if profile.highlights %}
-      <section>
-        <h2>Key Highlights</h2>
-        <ul>
-          {% for highlight in profile.highlights %}
-            <li>{{ highlight }}</li>
           {% endfor %}
         </ul>
       </section>

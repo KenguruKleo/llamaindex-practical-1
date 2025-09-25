@@ -1,20 +1,20 @@
 # LlamaIndex Candidate Explorer
 
-This project ingests PDF resumes, chunks them into meaningful passages, embeds the passages with an Ollama-hosted model, and writes them to a persistent ChromaDB vector store via LlamaIndex. A Flask UI lists the indexed candidates and exposes their summaries, key skills, and retrieved resume snippets.
+This project ingests PDF resumes, chunks them into meaningful passages, embeds the passages with OpenAI embeddings, and writes them to a persistent ChromaDB vector store via LlamaIndex. Candidate metadata (name, profession, skills, summary) is produced by querying each Chroma-backed index with an OpenAI chat model. A Flask UI lists the indexed candidates and exposes their summaries, key skills, and retrieved resume snippets.
 
 ## Requirements
 
 - Python 3.12+
 - A virtual environment (recommended)
-- Ollama running locally with an embedding model available (e.g. `nomic-embed-text`)
+- An OpenAI API key with access to the embedding and chat models you intend to use
 - PDF resumes placed under `data/`
 
-Install dependencies (inside your virtualenv) and make sure the embed model is pulled:
+Install dependencies inside your virtualenv and configure your API key (for convenience you can place it in a `.env` file):
 
 ```bash
 pip install -r requirements.txt
-ollama pull nomic-embed-text
-ollama pull llama3
+export OPENAI_API_KEY=sk-...
+# optional: echo "OPENAI_API_KEY=sk-..." > .env
 ```
 
 ## Preparing the data
@@ -27,7 +27,7 @@ python -m app.data_pipeline
 
 Generated artifacts are stored under `storage/`:
 
-- `candidates.json` – metadata, summaries, and skill highlights
+- `candidates.json` – metadata, summaries, and skills
 - `chroma/` – persistent ChromaDB collection per candidate
 - `<candidate-id>/` – LlamaIndex storage context for each resume
 
@@ -39,7 +39,7 @@ REBUILD_INDEX=1 python -m app.web
 
 ## Running the web application
 
-Ensure the Ollama service is running (`ollama serve`) and start the development server with Flask's CLI:
+Start the development server with Flask's CLI:
 
 ```bash
 FLASK_APP=app.web:create_app flask run --reload
@@ -62,7 +62,7 @@ templates/
 
 ## Notes
 
-- Set `OLLAMA_EMBED_MODEL` to switch to a different local embedding model (defaults to `nomic-embed-text`).
-- Set `OLLAMA_LLM_MODEL` to the local chat model that extracts metadata and summaries (defaults to `llama3`).
-- If the Ollama response cannot be parsed, the structured fields are left blank for that candidate.
+- Set `OPENAI_EMBED_MODEL` to switch to a different embedding model (defaults to `text-embedding-3-small`).
+- Set `OPENAI_LLM_MODEL` to the chat model that extracts metadata and summaries (defaults to `gpt-4o-mini`).
+- Make sure `OPENAI_API_KEY` is available in the environment (or `.env`) before running the pipeline or web app.
 - ChromaDB stores vectors locally under `storage/chroma/`; remove this folder if you need a clean slate.

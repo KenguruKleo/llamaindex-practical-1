@@ -11,7 +11,7 @@
               <h2>{{ profile.name }}</h2>
               <p class="subtitle">{{ profile.profession }}</p>
               {% if profile.years_experience %}
-                <p class="meta">{{ profile.years_experience }} years experience</p>
+                <p class="meta">Experience (years): {{ profile.years_experience }}</p>
               {% endif %}
               {% if profile.skills %}
                 <p class="skills">Key skills: {{ profile.skills | join(', ') }}</p>

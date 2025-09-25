@@ -11,6 +11,7 @@ from llama_index.core import StorageContext, VectorStoreIndex
 from llama_index.vector_stores.chroma import ChromaVectorStore
 
 from . import CandidateProfile, load_profiles, prepare_candidates
+
 from .data_pipeline import create_embedding_model
 
 BASE_DIR = Path(__file__).resolve().parent.parent
