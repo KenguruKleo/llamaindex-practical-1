@@ -6,3 +6,4 @@ chromadb>=0.4.24
 numpy>=1.24
 flask>=3.0
 pypdf>=4.0
+requests>=2.31

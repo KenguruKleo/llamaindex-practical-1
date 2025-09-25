@@ -14,6 +14,7 @@ Install dependencies (inside your virtualenv) and make sure the embed model is p
 ```bash
 pip install -r requirements.txt
 ollama pull nomic-embed-text
+ollama pull llama3
 ```
 
 ## Preparing the data
@@ -62,5 +63,6 @@ templates/
 ## Notes
 
 - Set `OLLAMA_EMBED_MODEL` to switch to a different local embedding model (defaults to `nomic-embed-text`).
-- The skill extraction heuristics are keyword-based; adjust `SKILL_KEYWORDS` in `app/data_pipeline.py` to fit your domain.
+- Set `OLLAMA_LLM_MODEL` to the local chat model that extracts metadata and summaries (defaults to `llama3`).
+- If the Ollama response cannot be parsed, the structured fields are left blank for that candidate.
 - ChromaDB stores vectors locally under `storage/chroma/`; remove this folder if you need a clean slate.

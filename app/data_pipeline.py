@@ -4,13 +4,13 @@ import json
 import os
 import re
 import shutil
-from collections import Counter
 from functools import lru_cache
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 import chromadb
+import requests
 
 try:
     from llama_index.core.readers import SimpleDirectoryReader
@@ -29,6 +29,8 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 
 
 DEFAULT_OLLAMA_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434").rstrip("/")
+OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "llama3")
 
 
 @lru_cache(maxsize=4)
@@ -39,6 +41,82 @@ def _cached_embedding_model(model_name: str) -> BaseEmbedding:
 def create_embedding_model(model_name: str | None = None) -> BaseEmbedding:
     target_model = model_name or DEFAULT_OLLAMA_MODEL
     return _cached_embedding_model(target_model)
+
+
+def _ollama_generate(prompt: str, *, model: str = OLLAMA_LLM_MODEL, timeout: int = 45) -> str:
+    payload = {"model": model, "prompt": prompt, "stream": False}
+    response = requests.post(f"{OLLAMA_API_URL}/api/generate", json=payload, timeout=timeout)
+    response.raise_for_status()
+    data = response.json()
+    return data.get("response", "")
+
+
+def _extract_json_object(raw: str) -> Dict[str, object]:
+    snippet = raw.strip()
+    if "```" in snippet:
+        parts = snippet.split("```")
+        candidates = [part for part in parts if "{" in part and "}" in part]
+        if candidates:
+            snippet = max(candidates, key=len)
+    start = snippet.find("{")
+    end = snippet.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return {}
+    try:
+        return json.loads(snippet[start : end + 1])
+    except json.JSONDecodeError:
+        return {}
+
+
+def extract_candidate_details(text: str, *, max_chars: int = 6000) -> Dict[str, object]:
+    excerpt = text[:max_chars]
+    prompt = (
+        "Extract from this resume only:\n"
+        "- Name\n"
+        "- Skills\n"
+        "- Profession\n"
+        "- Years of experience\n"
+        "And summarize strongest skills, achievements, and professional highlights.\n\n"
+        "Extract candidate details in JSON strictly following this schema:\n"
+        "{\n"
+        "  \"name\": \"...\",\n"
+        "  \"profession\": \"...\",\n"
+        "  \"skills\": [\"...\", \"...\"],\n"
+        "  \"years_experience\": \"...\",\n"
+        "  \"summary\": \"...\"\n"
+        "}\n\n"
+        f"Resume text:\n{excerpt}"
+    )
+    try:
+        raw = _ollama_generate(prompt)
+        return _extract_json_object(raw)
+    except Exception:
+        return {}
+
+
+def _parse_years_experience(value: object) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        match = re.search(r"\d+(?:\.\d+)?", value)
+        if match:
+            try:
+                return float(match.group())
+            except ValueError:
+                return None
+    return None
+
+
+def _sanitize_skills(raw: object, *, limit: int = 10) -> List[str]:
+    if isinstance(raw, list):
+        cleaned = [str(item).strip() for item in raw if isinstance(item, (str, int, float))]
+        return [skill for skill in cleaned if skill][:limit]
+    if isinstance(raw, str):
+        candidates = [part.strip() for part in raw.split(",") if part.strip()]
+        return candidates[:limit]
+    return []
 
 
 @dataclass
@@ -58,31 +136,6 @@ class CandidateProfile:
             round(self.years_experience, 1) if self.years_experience is not None else None
         )
         return payload
-
-
-SKILL_KEYWORDS = {
-    "python",
-    "java",
-    "javascript",
-    "typescript",
-    "aws",
-    "azure",
-    "gcp",
-    "docker",
-    "kubernetes",
-    "sql",
-    "postgresql",
-    "mongodb",
-    "react",
-    "django",
-    "flask",
-    "fastapi",
-    "machine learning",
-    "deep learning",
-    "nlp",
-    "llm",
-}
-
 
 class CandidateIndexer:
     def __init__(
@@ -149,11 +202,15 @@ class CandidateIndexer:
         index.storage_context.persist(persist_dir=str(candidate_dir))
 
         full_text = "\n".join(doc.text for doc in documents)
-        name = extract_name(full_text)
-        profession = extract_profession(full_text)
-        years = extract_years_of_experience(full_text)
-        skills = extract_skills(full_text)
-        summary, highlights = build_summary(index)
+        details = extract_candidate_details(full_text)
+
+        raw_skills = details.get("skills") or details.get("skils")
+        skills = _sanitize_skills(raw_skills)
+        name = str(details.get("name", "")).strip()
+        profession = str(details.get("profession", "")).strip()
+        years = _parse_years_experience(details.get("years_experience"))
+        summary = str(details.get("summary", "")).strip()
+        highlights = retrieve_highlights(index)
 
         return CandidateProfile(
             id=candidate_id,
@@ -187,86 +244,28 @@ def slugify(value: str) -> str:
     return "-".join(tokens) or "candidate"
 
 
-def extract_name(text: str) -> Optional[str]:
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if not lines:
-        return None
-
-    # Many CVs open with the person's name in the first few lines
-    for line in lines[:5]:
-        if len(line.split()) <= 5 and line.replace(" ", "").isalpha():
-            return line.title()
-    return lines[0][:80]
-
-
-def extract_profession(text: str) -> Optional[str]:
-    pattern = re.compile(r"(senior|lead|principal|full\s*stack|software|data|machine learning|devops)[^\n]{0,60}", re.IGNORECASE)
-    match = pattern.search(text)
-    if match:
-        return match.group(0).strip().replace("\n", " ")
-    return None
-
-
-def extract_years_of_experience(text: str) -> Optional[float]:
-    matches = re.findall(r"(\d{1,2})\+?\s+(?:years|yrs)", text, flags=re.IGNORECASE)
-    if matches:
-        values = [float(m) for m in matches]
-        return max(values)
-    return None
-
-
-def extract_skills(text: str, top_k: int = 10) -> List[str]:
-    text_lower = text.lower()
-    counts: Dict[str, int] = {}
-    for keyword in SKILL_KEYWORDS:
-        occurrences = text_lower.count(keyword)
-        if occurrences:
-            counts[keyword] = occurrences
-    ranked = sorted(counts.items(), key=lambda item: item[1], reverse=True)
-    return [skill for skill, _ in ranked[:top_k]]
-
-
-def build_summary(index: VectorStoreIndex, max_sentences: int = 5) -> tuple[str, List[str]]:
+def retrieve_highlights(index: VectorStoreIndex, max_sentences: int = 3) -> List[str]:
     retriever = index.as_retriever(similarity_top_k=6)
     results = retriever.retrieve("strongest skills and professional highlights")
 
     sentences: List[str] = []
+    seen = set()
     for item in results:
         chunk_sentences = split_sentences(item.node.text) # type: ignore
         for sentence in chunk_sentences:
             cleaned = sentence.strip()
-            if cleaned and cleaned not in sentences:
+            if cleaned and cleaned not in seen:
+                seen.add(cleaned)
                 sentences.append(cleaned)
-
-    summary = compose_summary(sentences, max_sentences=max_sentences)
-    highlights = sentences[: min(3, len(sentences))]
-    return summary, highlights
+            if len(sentences) >= max_sentences:
+                break
+        if len(sentences) >= max_sentences:
+            break
+    return sentences
 
 
 def split_sentences(text: str) -> List[str]:
     return re.split(r"(?<=[.!?])\s+", text)
-
-
-def compose_summary(sentences: Iterable[str], max_sentences: int = 5) -> str:
-    sentences = list(sentences)
-    if not sentences:
-        return "Summary not available."
-
-    word_counts = Counter()
-    for sentence in sentences:
-        tokens = re.findall(r"\b\w+\b", sentence.lower())
-        word_counts.update(tokens)
-
-    scored = []
-    for sentence in sentences:
-        tokens = re.findall(r"\b\w+\b", sentence.lower())
-        score = sum(word_counts[token] for token in tokens)
-        scored.append((score, sentence))
-
-    scored.sort(key=lambda item: item[0], reverse=True)
-    top_sentences = [sentence for _, sentence in scored[:max_sentences]]
-    return " ".join(top_sentences)
-
 
 def load_profiles(storage_dir: Path) -> List[CandidateProfile]:
     data_path = storage_dir / "candidates.json"
