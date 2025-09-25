@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Candidates{% endblock %}
+{% block content %}
+  <section>
+    <h1>Candidate Directory</h1>
+    {% if profiles %}
+      <ul class="candidate-list">
+        {% for profile in profiles %}
+          <li class="candidate-card">
+            <div>
+              <h2>{{ profile.name }}</h2>
+              <p class="subtitle">{{ profile.profession }}</p>
+              {% if profile.years_experience %}
+                <p class="meta">{{ profile.years_experience }} years experience</p>
+              {% endif %}
+              {% if profile.skills %}
+                <p class="skills">Key skills: {{ profile.skills | join(', ') }}</p>
+              {% endif %}
+            </div>
+            <a class="cta" href="{{ url_for('candidate_view', candidate_id=profile.id) }}">View profile</a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>No candidates processed. Ensure PDF resumes are available in the data directory.</p>
+    {% endif %}
+  </section>
+{% endblock %}

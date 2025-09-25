@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.name }}{% endblock %}
+{% block content %}
+  <article class="candidate-detail">
+    <a class="back-link" href="{{ url_for('index') }}">← Back to directory</a>
+    <header>
+      <h1>{{ profile.name }}</h1>
+      <p class="subtitle">{{ profile.profession }}</p>
+      <ul class="meta-list">
+        {% if profile.years_experience %}
+          <li><strong>Experience:</strong> {{ profile.years_experience }} years</li>
+        {% endif %}
+        <li><strong>Source:</strong> {{ profile.source_file }}</li>
+      </ul>
+    </header>
+
+    <section>
+      <h2>Summary</h2>
+      <p>{{ profile.summary }}</p>
+    </section>
+
+    {% if profile.skills %}
+      <section>
+        <h2>Highlighted Skills</h2>
+        <ul class="pill-list">
+          {% for skill in profile.skills %}
+            <li>{{ skill }}</li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endif %}
+
+    {% if profile.highlights %}
+      <section>
+        <h2>Key Highlights</h2>
+        <ul>
+          {% for highlight in profile.highlights %}
+            <li>{{ highlight }}</li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endif %}
+
+    {% if snippets %}
+      <section>
+        <h2>Retrieved Context</h2>
+        <ol>
+          {% for snippet in snippets %}
+            <li>{{ snippet }}</li>
+          {% endfor %}
+        </ol>
+      </section>
+    {% endif %}
+  </article>
+{% endblock %}
