@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
 from collections import Counter
+from functools import lru_cache
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
@@ -10,16 +13,32 @@ from typing import Dict, Iterable, List, Optional
 import chromadb
 
 try:
-    from llama_index.readers.file import SimpleDirectoryReader
+    from llama_index.core.readers import SimpleDirectoryReader
 except ImportError:  # pragma: no cover - compatibility with older packages
-    from llama_index.core import SimpleDirectoryReader  # type: ignore
+    try:
+        from llama_index.readers.file import SimpleDirectoryReader  # type: ignore
+    except ImportError:
+        from llama_index.core import SimpleDirectoryReader  # type: ignore
 
 from llama_index.core import StorageContext, VectorStoreIndex
+from llama_index.core.embeddings import BaseEmbedding
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.schema import Document
+from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.vector_stores.chroma import ChromaVectorStore
 
-from .embeddings import HashEmbedding
+
+DEFAULT_OLLAMA_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+
+
+@lru_cache(maxsize=4)
+def _cached_embedding_model(model_name: str) -> BaseEmbedding:
+    return OllamaEmbedding(model_name=model_name)
+
+
+def create_embedding_model(model_name: str | None = None) -> BaseEmbedding:
+    target_model = model_name or DEFAULT_OLLAMA_MODEL
+    return _cached_embedding_model(target_model)
 
 
 @dataclass
@@ -66,11 +85,17 @@ SKILL_KEYWORDS = {
 
 
 class CandidateIndexer:
-    def __init__(self, data_dir: Path, storage_dir: Path) -> None:
+    def __init__(
+        self,
+        data_dir: Path,
+        storage_dir: Path,
+        *,
+        embed_model: BaseEmbedding | None = None,
+    ) -> None:
         self._data_dir = data_dir
         self._storage_dir = storage_dir
         self._chroma_dir = self._storage_dir / "chroma"
-        self._embed_model = HashEmbedding()
+        self._embed_model = embed_model or create_embedding_model()
         self._splitter = SentenceSplitter(chunk_size=512, chunk_overlap=80)
         self._chroma_client = chromadb.PersistentClient(path=str(self._chroma_dir))
 
@@ -82,6 +107,7 @@ class CandidateIndexer:
 
         for pdf_path in sorted(self._data_dir.glob("*.pdf")):
             candidate_id = slugify(pdf_path.stem)
+            self._reset_candidate_storage(candidate_id)
             documents = self._load_documents(pdf_path, candidate_id)
             nodes = self._build_nodes(documents, candidate_id, pdf_path.name)
 
@@ -140,6 +166,15 @@ class CandidateIndexer:
             source_file=source_file,
         )
 
+    def _reset_candidate_storage(self, candidate_id: str) -> None:
+        candidate_dir = self._storage_dir / candidate_id
+        if candidate_dir.exists():
+            shutil.rmtree(candidate_dir, ignore_errors=True)
+        try:
+            self._chroma_client.delete_collection(name=candidate_id)
+        except Exception:
+            pass
+
     def _persist_profiles(self, profiles: List[CandidateProfile]) -> None:
         payload = [profile.to_json() for profile in profiles]
         output_path = self._storage_dir / "candidates.json"
@@ -197,7 +232,7 @@ def build_summary(index: VectorStoreIndex, max_sentences: int = 5) -> tuple[str,
 
     sentences: List[str] = []
     for item in results:
-        chunk_sentences = split_sentences(item.node.text)
+        chunk_sentences = split_sentences(item.node.text) # type: ignore
         for sentence in chunk_sentences:
             cleaned = sentence.strip()
             if cleaned and cleaned not in sentences:

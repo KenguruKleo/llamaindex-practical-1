@@ -3,11 +3,12 @@
 from pathlib import Path
 from typing import List
 
-from .data_pipeline import CandidateIndexer, CandidateProfile, load_profiles
+from .data_pipeline import CandidateIndexer, CandidateProfile, create_embedding_model, load_profiles
 
 __all__ = [
     "CandidateIndexer",
     "CandidateProfile",
+    "create_embedding_model",
     "load_profiles",
 ]
 

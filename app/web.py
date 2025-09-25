@@ -11,7 +11,7 @@ from llama_index.core import StorageContext, VectorStoreIndex
 from llama_index.vector_stores.chroma import ChromaVectorStore
 
 from . import CandidateProfile, load_profiles, prepare_candidates
-from .embeddings import HashEmbedding
+from .data_pipeline import create_embedding_model
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -49,7 +49,7 @@ def load_index(candidate_id: str) -> VectorStoreIndex:
     return VectorStoreIndex.from_vector_store(
         vector_store=vector_store,
         storage_context=storage_context,
-        embed_model=HashEmbedding(),
+        embed_model=create_embedding_model(),
     )
 
 
@@ -71,7 +71,7 @@ def candidate_view(candidate_id: str) -> str:
         results = retriever.retrieve("professional highlights and core skills")
         seen = set()
         for item in results:
-            text = item.node.text.strip()
+            text = item.node.text.strip() # type: ignore
             if text and text not in seen:
                 seen.add(text)
                 snippets.append(text)
