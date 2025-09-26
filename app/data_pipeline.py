@@ -19,6 +19,7 @@ from llama_index.core.schema import Document
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
 from llama_index.vector_stores.chroma import ChromaVectorStore
+from llama_index.core.vector_stores.types import MetadataFilter, MetadataFilters
 
 try:
     from llama_index.core.readers import SimpleDirectoryReader
@@ -34,6 +35,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
 OPENAI_LLM_MODEL = os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini")
 
+CHROMA_COLLECTION = "candidates"
+
 
 def create_embedding_model() -> BaseEmbedding:
     return OpenAIEmbedding(model=OPENAI_EMBED_MODEL, api_key=OPENAI_API_KEY)
@@ -48,6 +51,7 @@ def extract_candidate_details(
     *,
     llm: LLM,
     top_k: int = 8,
+    filters: Optional[MetadataFilters] = None,
 ) -> Dict[str, object]:
     prompt = (
         "You are analysing a software engineer resume. Extract the candidate's name, "
@@ -67,6 +71,7 @@ def extract_candidate_details(
             similarity_top_k=top_k,
             llm=llm,
             response_mode="compact",
+            filters=filters,
         )
         response = query_engine.query(prompt)
     except Exception as ex:
@@ -117,6 +122,7 @@ class CandidateIndexer:
         self._llm = create_llm()
         self._splitter = SentenceSplitter(chunk_size=512, chunk_overlap=80)
         self._chroma_client = chromadb.PersistentClient(path=str(self._chroma_dir))
+        self._collection_name = CHROMA_COLLECTION
 
     def run(self) -> List[CandidateProfile]:
         self._storage_dir.mkdir(parents=True, exist_ok=True)
@@ -158,16 +164,14 @@ class CandidateIndexer:
         _documents: List[Document],
         source_file: str,
     ) -> CandidateProfile:
-        collection = self._chroma_client.get_or_create_collection(name=candidate_id)
+        collection = self._chroma_client.get_or_create_collection(name=self._collection_name)
         vector_store = ChromaVectorStore(chroma_collection=collection)
         storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
         index = VectorStoreIndex(nodes, storage_context=storage_context, embed_model=self._embed_model)
-        candidate_dir = self._storage_dir / candidate_id
-        candidate_dir.mkdir(parents=True, exist_ok=True)
-        index.storage_context.persist(persist_dir=str(candidate_dir))
 
-        details = extract_candidate_details(index, llm=self._llm)
+        filters = MetadataFilters(filters=[MetadataFilter(key="candidate_id", value=candidate_id)])
+        details = extract_candidate_details(index, llm=self._llm, filters=filters)
 
         raw_skills = details.get("skills") or details.get("skils")
         skills = _sanitize_skills(raw_skills)
@@ -191,7 +195,8 @@ class CandidateIndexer:
         if candidate_dir.exists():
             shutil.rmtree(candidate_dir, ignore_errors=True)
         try:
-            self._chroma_client.delete_collection(name=candidate_id)
+            collection = self._chroma_client.get_or_create_collection(name=self._collection_name)
+            collection.delete(where={"candidate_id": candidate_id})
         except Exception:
             pass
 

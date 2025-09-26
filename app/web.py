@@ -11,15 +11,16 @@ import chromadb
 import streamlit as st
 from llama_index.core import StorageContext, VectorStoreIndex
 from llama_index.vector_stores.chroma import ChromaVectorStore
+from llama_index.core.vector_stores.types import MetadataFilter, MetadataFilters
 
 try:
-    from . import CandidateProfile, load_profiles, prepare_candidates
+    from . import CHROMA_COLLECTION, CandidateProfile, load_profiles, prepare_candidates
     from .data_pipeline import create_embedding_model
 except ImportError:  # when executed as a script via ``streamlit run``
     import sys
 
     sys.path.append(str(BASE_DIR))
-    from app import CandidateProfile, load_profiles, prepare_candidates
+    from app import CHROMA_COLLECTION, CandidateProfile, load_profiles, prepare_candidates
     from app.data_pipeline import create_embedding_model
 
 DATA_DIR = BASE_DIR / "data"
@@ -37,17 +38,11 @@ PROFILE_LOOKUP = {profile.id: profile for profile in PROFILES}
 chroma_client = chromadb.PersistentClient(path=str(CHROMA_DIR))
 
 
-@lru_cache(maxsize=32)
-def load_index(candidate_id: str) -> VectorStoreIndex:
-    collection = chroma_client.get_or_create_collection(candidate_id)
+@lru_cache(maxsize=1)
+def load_index() -> VectorStoreIndex:
+    collection = chroma_client.get_or_create_collection(CHROMA_COLLECTION)
     vector_store = ChromaVectorStore(chroma_collection=collection)
-    candidate_dir = STORAGE_DIR / candidate_id
-    if not candidate_dir.exists():
-        raise FileNotFoundError(f"No persisted index found for candidate '{candidate_id}'")
-    storage_context = StorageContext.from_defaults(
-        vector_store=vector_store,
-        persist_dir=str(candidate_dir),
-    )
+    storage_context = StorageContext.from_defaults(vector_store=vector_store)
     return VectorStoreIndex.from_vector_store(
         vector_store=vector_store,
         storage_context=storage_context,
@@ -58,8 +53,9 @@ def load_index(candidate_id: str) -> VectorStoreIndex:
 @st.cache_data(show_spinner=False)
 def fetch_candidate_snippets(candidate_id: str) -> List[str]:
     try:
-        index = load_index(candidate_id)
-        retriever = index.as_retriever(similarity_top_k=3)
+        index = load_index()
+        filters = MetadataFilters(filters=[MetadataFilter(key="candidate_id", value=candidate_id)])
+        retriever = index.as_retriever(similarity_top_k=3, filters=filters)
         results = retriever.retrieve("professional highlights and core skills")
     except Exception:
         return []
@@ -101,8 +97,10 @@ def render_directory(profiles: List[CandidateProfile], active_candidate_id: Opti
             st.caption(profile.profession)
             if profile.years_experience:
                 st.write(f"Experience: {profile.years_experience} years")
+            if profile.skills:
+                st.write(f"Skills: {', '.join(profile.skills)}")
             if profile.summary:
-                st.write(_format_summary(profile.summary))
+                st.write(_format_summary(profile.summary, 1000))
 
             button_disabled = profile.id == active_candidate_id
             button_label = "Viewing profile" if button_disabled else "View full profile"

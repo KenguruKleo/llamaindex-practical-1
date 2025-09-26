@@ -28,8 +28,7 @@ python -m app.data_pipeline
 Generated artifacts are stored under `storage/`:
 
 - `candidates.json` – metadata, summaries, and skills
-- `chroma/` – persistent ChromaDB collection per candidate
-- `<candidate-id>/` – LlamaIndex storage context for each resume
+- `chroma/` – persistent ChromaDB storage (single `candidates` collection containing every resume chunk)
 
 If you add or update resumes, rebuild the index:
 
@@ -63,5 +62,5 @@ static/
 - Set `OPENAI_EMBED_MODEL` to switch to a different embedding model (defaults to `text-embedding-3-small`).
 - Set `OPENAI_LLM_MODEL` to the chat model that extracts metadata and summaries (defaults to `gpt-4o-mini`).
 - Make sure `OPENAI_API_KEY` is available in the environment (or `.env`) before running the pipeline or web app.
-- ChromaDB stores vectors locally under `storage/chroma/`; remove this folder if you need a clean slate.
+- ChromaDB stores vectors locally under `storage/chroma/`; remove this folder if you need a clean slate or to clear the shared `candidates` collection.
 - Legacy Flask templates have been removed; the Streamlit app renders the UI directly in `app/web.py`.
