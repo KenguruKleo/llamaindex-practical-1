@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import base64
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional
@@ -51,27 +52,6 @@ def load_index() -> VectorStoreIndex:
         storage_context=storage_context,
         embed_model=create_embedding_model(),
     )
-
-
-@st.cache_data(show_spinner=False)
-def fetch_candidate_snippets(candidate_id: str) -> List[str]:
-    try:
-        index = load_index()
-        filters = MetadataFilters(filters=[MetadataFilter(key="candidate_id", value=candidate_id)])
-        retriever = index.as_retriever(similarity_top_k=3, filters=filters)
-        results = retriever.retrieve("professional highlights and core skills")
-    except Exception:
-        return []
-
-    snippets: List[str] = []
-    seen = set()
-    for item in results:
-        text = str(getattr(item.node, "text", "")).strip()
-        if text and text not in seen:
-            seen.add(text)
-            snippets.append(text)
-    return snippets
-
 
 def _format_summary(summary: str, limit: int = 240) -> str:
     summary = summary.strip()
@@ -137,15 +117,33 @@ def render_candidate_details(profile: CandidateProfile) -> None:
         st.markdown("#### Skills")
         st.write(", ".join(profile.skills))
 
-    st.markdown("#### Highlights")
-    with st.spinner("Retrieving top snippets…"):
-        snippets = fetch_candidate_snippets(profile.id)
-
-    if snippets:
-        for snippet in snippets:
-            st.markdown(f"- {snippet}")
+    pdf_path = DATA_DIR / f"{profile.id}.pdf"
+    st.markdown("#### Resume")
+    if pdf_path.exists():
+        with pdf_path.open("rb") as fp:
+            pdf_bytes = fp.read()
+        encoded_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+        st.download_button(
+            label="Download resume PDF",
+            data=pdf_bytes,
+            file_name=pdf_path.name,
+            mime="application/pdf",
+        )
+        st.markdown(
+            f"""
+            <div style="border:1px solid #ddd; height:600px;">
+              <iframe
+                src="data:application/pdf;base64,{encoded_pdf}#toolbar=1"
+                style="width:100%; height:100%; border:0;"
+                title="Resume preview"
+              ></iframe>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     else:
-        st.info("No highlights available. The index might still be building or the resume lacks detailed sections.")
+        st.warning("Resume PDF not found in the data directory.")
+
 
 def render_agent_chat() -> None:
     st.markdown("### Candidate Assistant Chat")
