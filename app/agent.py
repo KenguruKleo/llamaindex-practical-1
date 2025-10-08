@@ -32,7 +32,8 @@ LANGUAGE_INSTRUCTION = (
 )
 OUTPUT_INSTRUCTION = (
     "Always include the all matched candidate identifiers you relied on in your final answer. "
-    "List them clearly so the user can look them up, and state explicitly if none were found."
+    "List them clearly using the relative link format `?candidate=<id>` so they can be clicked, "
+    "text inside link should be just candidate id."
     "For the most relevant candidate call profile_lookup for detailed information."
     "Provide structured information about the candidate."
     "Use bullets or new lines to separate different fields."
@@ -83,10 +84,12 @@ def _build_retrieval_tool(index: VectorStoreIndex) -> FunctionTool:
             profile = profiles.get(candidate_id)
             if profile:
                 id_lines.append(
-                    f"- {candidate_id}: {profile.name} / {profile.profession}"
+                    f"- [{candidate_id}](?candidate={candidate_id}): {profile.name} / {profile.profession}"
                 )
             else:
-                id_lines.append(f"- {candidate_id}: profile details unavailable")
+                id_lines.append(
+                    f"- [{candidate_id}](?candidate={candidate_id}): profile details unavailable"
+                )
 
         if id_lines:
             answer_text += (
@@ -109,7 +112,8 @@ def _build_retrieval_tool(index: VectorStoreIndex) -> FunctionTool:
 
 
 def _format_profile(profile: CandidateProfile) -> str:
-    parts = [f"ID: {profile.id}", f"Name: {profile.name}", f"Profession: {profile.profession}"]
+    link = f"[{profile.id}](?candidate={profile.id})"
+    parts = [f"ID: {link}", f"Name: {profile.name}", f"Profession: {profile.profession}"]
     if profile.years_experience:
         parts.append(f"Experience: {profile.years_experience} years")
     if profile.skills:
