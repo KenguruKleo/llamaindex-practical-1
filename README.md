@@ -9,13 +9,17 @@ This project ingests PDF resumes, chunks them into meaningful passages, embeds t
 - An OpenAI API key with access to the embedding and chat models you intend to use
 - PDF resumes placed under `data/`
 
-Install dependencies inside your virtualenv and configure your API key (for convenience you can place it in a `.env` file):
+Create a virtual environment, activate it, and install dependencies (adjust the activation command for your shell/OS):
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate        # Windows PowerShell: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 export OPENAI_API_KEY=sk-...
 # optional: echo "OPENAI_API_KEY=sk-..." > .env
 ```
+
+Reactivate the environment in new shells with `source .venv/bin/activate` (or the corresponding Windows command) before running any project commands.
 
 ## Preparing the data
 

@@ -10,17 +10,20 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 import chromadb
 import streamlit as st
 from llama_index.core import StorageContext, VectorStoreIndex
-from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.core.vector_stores.types import MetadataFilter, MetadataFilters
+from llama_index.vector_stores.chroma import ChromaVectorStore
+from llama_index.core.llms import ChatMessage
 
 try:
     from . import CHROMA_COLLECTION, CandidateProfile, load_profiles, prepare_candidates
+    from .agent import chat_with_agent
     from .data_pipeline import create_embedding_model
 except ImportError:  # when executed as a script via ``streamlit run``
     import sys
 
     sys.path.append(str(BASE_DIR))
     from app import CHROMA_COLLECTION, CandidateProfile, load_profiles, prepare_candidates
+    from app.agent import chat_with_agent
     from app.data_pipeline import create_embedding_model
 
 DATA_DIR = BASE_DIR / "data"
@@ -144,6 +147,38 @@ def render_candidate_details(profile: CandidateProfile) -> None:
     else:
         st.info("No highlights available. The index might still be building or the resume lacks detailed sections.")
 
+def render_agent_chat() -> None:
+    st.markdown("### Candidate Assistant Chat")
+    
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+    
+    prompt = st.chat_input("Ask the assistant about candidates or skills...")
+    
+    if prompt:
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        
+        with st.spinner("Thinking..."):
+            history: List[ChatMessage] = st.session_state.messages
+            agent_output = chat_with_agent(prompt, chat_history=history.copy())
+            response = agent_output.response.content or ""
+            # enrich display with tool usage when available
+            if agent_output.tool_calls:
+                tools_used = ", ".join(
+                    call.tool_name for call in agent_output.tool_calls
+                )
+                response += f"\n\n_Tools used: {tools_used}_"
+            else:
+                response += "\n\n_No embedded tools used._"
+
+            st.session_state.messages.append({"role": "assistant", "content": response})
+        # rerender the chat to show the new messages
+        st.rerun()
+
 
 def main() -> None:
     st.set_page_config(page_title="Candidate Explorer", page_icon="🧑‍💼", layout="wide")
@@ -164,10 +199,17 @@ def main() -> None:
 
     if selected_profile:
         st.sidebar.success(f"Viewing: {selected_profile.name}")
-        st.divider()
-        render_candidate_details(selected_profile)
-    else:
-        render_directory(PROFILES, current_id)
+
+    tab_directory, tab_agent = st.tabs(["Candidate Directory", "Agent Chat"])
+
+    with tab_directory:
+        if selected_profile:
+            render_candidate_details(selected_profile)
+        else:
+            render_directory(PROFILES, current_id)
+
+    with tab_agent:
+        render_agent_chat()
 
 
 if __name__ == "__main__":
